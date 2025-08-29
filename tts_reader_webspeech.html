@@ -1,0 +1,138 @@
+\
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TTS Reader — Web Speech</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans TC",Arial,sans-serif;padding:16px;line-height:1.4}
+    textarea{width:100%;height:40vh;padding:10px;font-size:16px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+    button{font-size:16px;padding:8px 12px}
+    select,input{font-size:16px;padding:6px}
+    .note{font-size:13px;color:#666}
+    progress{width:100%}
+  </style>
+</head>
+<body>
+  <h1>TTS Reader — Web Speech</h1>
+  <p class="note">此版本使用瀏覽器內建 <code>speechSynthesis</code>。在 iOS/Safari 背景播放不可靠。建議使用「Azure 版」。</p>
+
+  <label for="text">貼上文字：</label>
+  <textarea id="text" placeholder="把要朗讀的文字貼在這裡"></textarea>
+
+  <div class="row">
+    <label>語音：</label>
+    <select id="voice"></select>
+    <label>速率</label>
+    <input type="number" id="rate" min="0.5" max="2" step="0.1" value="1.0">
+    <label>音調</label>
+    <input type="number" id="pitch" min="0" max="2" step="0.1" value="1.0">
+  </div>
+
+  <div class="row">
+    <button id="speak">開始朗讀</button>
+    <button id="pause">暫停</button>
+    <button id="resume">繼續</button>
+    <button id="stop">停止</button>
+  </div>
+
+  <progress id="prog" value="0" max="1"></progress>
+  <div id="status" class="note"></div>
+
+  <script>
+    const textEl = document.getElementById('text');
+    const voiceSel = document.getElementById('voice');
+    const rateEl = document.getElementById('rate');
+    const pitchEl = document.getElementById('pitch');
+    const prog = document.getElementById('prog');
+    const statusEl = document.getElementById('status');
+
+    let voices = [];
+
+    function populateVoices(){
+      voices = speechSynthesis.getVoices();
+      voiceSel.innerHTML = '';
+      voices.forEach((v,i)=>{
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        opt.textContent = v.name + ' (' + v.lang + ')';
+        if(v.lang.startsWith('zh')) opt.selected = true;
+        voiceSel.appendChild(opt);
+      });
+    }
+    populateVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = populateVoices;
+    }
+
+    function splitText(t, maxLen=1000){
+      // split by sentences then merge chunks under maxLen
+      const parts = t.split(/(?<=[。！？!?\n\r])/);
+      const chunks = [];
+      let cur='';
+      for(const p of parts){
+        if((cur + p).length > maxLen){
+          if(cur) chunks.push(cur);
+          if(p.length > maxLen){
+            for(let i=0;i<p.length;i+=maxLen){
+              chunks.push(p.slice(i,i+maxLen));
+            }
+            cur='';
+          }else{
+            cur=p;
+          }
+        }else{
+          cur+=p;
+        }
+      }
+      if(cur) chunks.push(cur);
+      return chunks.filter(x=>x.trim().length>0);
+    }
+
+    let queue = [];
+    let currentIndex = -1;
+
+    function speakQueue(chunks){
+      queue = chunks;
+      currentIndex = -1;
+      prog.value = 0;
+      nextUtterance();
+    }
+
+    function nextUtterance(){
+      if(++currentIndex >= queue.length){
+        statusEl.textContent = '完成';
+        prog.value = 1;
+        return;
+      }
+      const u = new SpeechSynthesisUtterance(queue[currentIndex]);
+      const v = voices.find(v=>v.name === voiceSel.value);
+      if(v) u.voice = v;
+      u.rate = parseFloat(rateEl.value) || 1.0;
+      u.pitch = parseFloat(pitchEl.value) || 1.0;
+      u.onstart = ()=>{
+        statusEl.textContent = `朗讀 ${currentIndex+1}/${queue.length}`;
+        prog.value = currentIndex / queue.length;
+      };
+      u.onend = ()=>{
+        nextUtterance();
+      };
+      u.onerror = (e)=>{
+        statusEl.textContent = '錯誤：' + e.error;
+      };
+      speechSynthesis.speak(u);
+    }
+
+    document.getElementById('speak').onclick = ()=>{
+      if(!textEl.value.trim()){ alert('請先貼上文字'); return; }
+      if(speechSynthesis.speaking) speechSynthesis.cancel();
+      speakQueue(splitText(textEl.value));
+    };
+    document.getElementById('pause').onclick = ()=>{ if(speechSynthesis.speaking) speechSynthesis.pause(); };
+    document.getElementById('resume').onclick = ()=>{ if(speechSynthesis.paused) speechSynthesis.resume(); };
+    document.getElementById('stop').onclick = ()=>{ speechSynthesis.cancel(); statusEl.textContent='停止'; };
+  </script>
+</body>
+</html>
