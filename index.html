@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TTS Reader — Web Speech</title>
+  <title>TTS Reader — Web Speech (Fixed zh-TW)</title>
   <style>
     body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans TC",Arial,sans-serif;padding:16px;line-height:1.4}
     textarea{width:100%;height:40vh;padding:10px;font-size:16px}
@@ -16,8 +16,8 @@
   </style>
 </head>
 <body>
-  <h1>TTS Reader — Web Speech</h1>
-  <p class="note">此版本使用瀏覽器內建 <code>speechSynthesis</code>。在 iOS/Safari 背景播放不可靠。建議使用「Azure 版」。</p>
+  <h1>TTS Reader — Web Speech (Fixed zh-TW)</h1>
+  <p class="note">此版本會優先選擇 <b>zh-TW</b>，再來 zh-CN，完全排除 zh-HK（粵語）。</p>
 
   <label for="text">貼上文字：</label>
   <textarea id="text" placeholder="把要朗讀的文字貼在這裡"></textarea>
@@ -53,14 +53,25 @@
 
     function populateVoices(){
       voices = speechSynthesis.getVoices();
+      // 排除 zh-HK
+      voices = voices.filter(v => !v.lang.startsWith('zh-HK'));
+      // 排序：先 zh-TW，再 zh-CN，再其他
+      const pref = v => v.lang.startsWith('zh-TW') ? 0
+                   : v.lang.startsWith('zh-CN') ? 1
+                   : 2;
+      voices = voices.slice().sort((a,b)=> pref(a)-pref(b) || a.name.localeCompare(b.name));
+
       voiceSel.innerHTML = '';
-      voices.forEach((v,i)=>{
+      voices.forEach(v=>{
         const opt = document.createElement('option');
         opt.value = v.name;
         opt.textContent = v.name + ' (' + v.lang + ')';
-        if(v.lang.startsWith('zh')) opt.selected = true;
         voiceSel.appendChild(opt);
       });
+      // 預設 zh-TW，若無則 zh-CN
+      const tw = voices.find(v=>v.lang.startsWith('zh-TW'));
+      const cn = voices.find(v=>v.lang.startsWith('zh-CN'));
+      voiceSel.value = (tw?.name) || (cn?.name) || voices[0]?.name;
     }
     populateVoices();
     if (speechSynthesis.onvoiceschanged !== undefined) {
@@ -68,7 +79,6 @@
     }
 
     function splitText(t, maxLen=1000){
-      // split by sentences then merge chunks under maxLen
       const parts = t.split(/(?<=[。！？!?\n\r])/);
       const chunks = [];
       let cur='';
